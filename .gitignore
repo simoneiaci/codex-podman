@@ -1,0 +1,12 @@
+.DS_Store
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+podman-machine-default*
+.podman/
+.vscode/
+.idea/
+node_modules/
+.env
+.env.*

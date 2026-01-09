@@ -1,7 +1,17 @@
-🔵 PROCEDURE 1 — CODEX (Clean → Setup → Use)
+# codex-podman
 
-1️⃣ Clean Codex environment ONLY
+Run the Codex CLI in a minimal Podman container on Apple Silicon (arm64). This repo includes a `Containerfile` and a clean, repeatable workflow for build, auth, and daily use.
 
+## Prerequisites
+
+- Podman installed and working
+- Node-based image pulled by Podman (`node:20-slim`)
+
+## Clean environment
+
+Remove the container, image, and any leftover containers from the image, plus local Codex config:
+
+```sh
 # Remove container (by name)
 podman rm -f codex 2>/dev/null
 
@@ -16,14 +26,13 @@ rm -rf \
   "$HOME/.codex-home" \
   "$HOME/.openai" \
   "$HOME/.config/openai"
+```
 
+## Build image
 
-⸻
+The `Containerfile`:
 
-2️⃣ Build Codex image
-
-Containerfile (~/codex-podman/Containerfile)
-
+```Dockerfile
 FROM node:20-slim
 
 RUN npm install -g @openai/codex
@@ -33,17 +42,18 @@ RUN mkdir -p /home/codex && chmod 777 /home/codex
 
 WORKDIR /workspace
 ENTRYPOINT ["codex"]
+```
 
 Build:
 
+```sh
 cd ~/codex-podman
 podman build --platform=linux/arm64 -t codex:arm64 .
+```
 
+## Authenticate (one time)
 
-⸻
-
-3️⃣ Authenticate Codex (ONE TIME)
-
+```sh
 mkdir -p "$HOME/.codex-home"
 
 podman run --rm -it \
@@ -54,15 +64,15 @@ podman run --rm -it \
   -v "$HOME/Documents/AI:/workspace" \
   -w /workspace \
   codex:arm64 login --device-auth
+```
 
-✔ Uses device auth
-✔ No localhost callback
-✔ Token saved to ~/.codex-home
+- Uses device auth
+- No localhost callback
+- Token saved to `~/.codex-home`
 
-⸻
+## Daily usage
 
-4️⃣ Daily Codex usage (CLI only)
-
+```sh
 podman run --rm -it \
   --name codex \
   --user "$(id -u):$(id -g)" \
@@ -71,10 +81,10 @@ podman run --rm -it \
   -v "$HOME/Documents/AI:/workspace" \
   -w /workspace \
   codex:arm64
+```
 
+## Verify
 
-⸻
-
-5️⃣ Verify
-
+```sh
 codex whoami
+```
