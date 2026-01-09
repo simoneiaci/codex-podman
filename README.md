@@ -83,6 +83,21 @@ podman run --rm -it \
   codex:arm64
 ```
 
+## Optional alias
+
+Add this alias to make the daily command easier to run:
+
+```sh
+alias codex='podman run --rm -it \
+  --name codex \
+  --user "$(id -u):$(id -g)" \
+  -e HOME=/home/codex \
+  -v "$HOME/.codex-home:/home/codex" \
+  -v "$HOME/Documents/AI:/workspace" \
+  -w /workspace \
+  codex:arm64'
+```
+
 ## Verify
 
 ```sh
