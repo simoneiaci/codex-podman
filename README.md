@@ -39,7 +39,7 @@ rm -rf \
   "$HOME/.config/openai"
 ```
 # Create container (if missing)
-alias codex-pod-init='podman ps -a --format {{.Names}} | grep -q "^codex$" || (mkdir -p "$HOME/.codex-home" && podman create --name codex --user "$(id -u):$(id -g)" --security-opt no-new-privileges --cap-drop=ALL --memory="4g" --cpus="2.0" --pids-limit 100 --pull=never -e HOME=/home/codex -v "$HOME/.codex-home:/home/codex" -v "$HOME/.gitconfig:/home/codex/.gitconfig:ro" -v "$HOME/.ssh:/home/codex/.ssh:ro" -v "${AI_WORKSPACE_DIR}:/workspace" -w /workspace localhost/codex:arm64)'
+alias codex-pod-init='podman ps -a --format {{.Names}} | grep -q "^codex$" || (mkdir -p "${CODEX_POD_HOME}" && podman create --name codex --user "$(id -u):$(id -g)" --interactive --tty --security-opt no-new-privileges --cap-drop=ALL --memory="4g" --cpus="2.0" --pids-limit 100 --pull=never -e HOME=/home/codex -v "${CODEX_POD_HOME}:/home/codex" -v "$HOME/.gitconfig:/home/codex/.gitconfig:ro" -v "$HOME/.ssh:/home/codex/.ssh:ro" -v "${AI_WORKSPACE_DIR}:/workspace" -w /workspace localhost/codex:arm64)'
 
 # Start / attach to existing container
 alias codex-pod='podman start -ai codex'
