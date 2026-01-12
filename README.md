@@ -18,64 +18,7 @@ Run the Codex CLI in a minimal Podman container on Apple Silicon (arm64). This r
 - Podman
 - A working OpenAI Codex account
 
-## Clean environment
-
-Remove the container, image, and any leftover containers from the image, plus local Codex config:
-
-```sh
-# Remove container (by name)
-podman rm -f codex 2>/dev/null
-
-# Remove image
-podman rmi -f localhost/codex:arm64 2>/dev/null
-
-# Remove any leftover containers from the image
-podman rm -f $(podman ps -aq --filter ancestor=localhost/codex:arm64) 2>/dev/null
-
-# Remove Codex auth/config on host
-rm -rf \
-  "${CODEX_POD_HOME:-$HOME/.codex-home}" \
-  "$HOME/.openai" \
-  "$HOME/.config/openai"
-```
-# Create container (if missing)
-alias codex-pod-init='podman ps -a --format {{.Names}} | grep -q "^codex$" || (mkdir -p "${CODEX_POD_HOME}" && podman create --name codex --user "$(id -u):$(id -g)" --interactive --tty --security-opt no-new-privileges --cap-drop=ALL --memory="4g" --cpus="2.0" --pids-limit 100 --pull=never -e HOME=/home/codex -v "${CODEX_POD_HOME}:/home/codex" -v "$HOME/.gitconfig:/home/codex/.gitconfig:ro" -v "$HOME/.ssh:/home/codex/.ssh:ro" -v "${AI_WORKSPACE_DIR}:/workspace" -w /workspace localhost/codex:arm64)'
-
-# Start / attach to existing container
-alias codex-pod='podman start -ai codex'
-    apt-get install -y \
-    git curl wget gnupg ca-certificates \
-    jq vim less unzip zip openssh-client \
-    python3 python3-pip build-essential && \
-    apt-get clean && \
-    rm -rf /var/lib/apt/lists/*
-
-# Install GitHub CLI
-RUN curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg | dd of=/usr/share/keyrings/githubcli-archive-keyring.gpg && \
-    chmod go+r /usr/share/keyrings/githubcli-archive-keyring.gpg && \
-    echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" | tee /etc/apt/sources.list.d/github-cli.list > /dev/null && \
-    apt-get update && apt-get install -y gh && \
-    apt-get clean && rm -rf /var/lib/apt/lists/*
-
-# Install Git Credential Manager
-RUN ARCH=$(dpkg --print-architecture) && \
-  curl -L "https://github.com/git-ecosystem/git-credential-manager/releases/download/v2.4.1/gcm-linux_${ARCH}.2.4.1.deb" -o /tmp/gcm.deb && \
-  dpkg -i /tmp/gcm.deb && rm /tmp/gcm.deb
-
-RUN npm install -g @openai/codex
-
-RUN useradd -d /home/codex -s /bin/bash -M codex && \
-  mkdir -p /workspace && \
-  chown codex:codex /workspace
-
-USER codex
-ENV HOME=/home/codex
-
-WORKDIR /workspace
-ENTRYPOINT ["/bin/bash"]
-```
-
-Build:
+## Build the image
 
 > **Apple Silicon (M1–M4) note:** These instructions target arm64 hosts like your MacBook Pro. Git Credential Manager is skipped on this architecture, so rely on SSH credentials mounted from the host for git operations.
 
@@ -84,9 +27,8 @@ podman build --platform=linux/arm64 -t localhost/codex:arm64 .
 ```
 
 > **Note:** Podman will automatically pull the base image if not present locally.
-## Configure workspace path
 
-# Create container (if missing)
+## Configure workspace path
 
 ```bash
 export AI_WORKSPACE_DIR="$HOME/workspace"
@@ -161,6 +103,7 @@ podman start -ai codex
 ```bash
 codex whoami
 ```
+
 ## Shell aliases
 
 For quick access, add these to your `.zshrc` or `.bashrc`:
@@ -180,3 +123,22 @@ Then use simply:
 ```bash
 codex-pod
 ```
+
+## Clean up (optional)
+
+Remove the container, image, any leftover stopped containers created from the image, and the host-side Codex data directory:
+
+```sh
+podman rm -f codex 2>/dev/null
+podman rmi -f localhost/codex:arm64 2>/dev/null
+podman rm -f $(podman ps -aq --filter ancestor=localhost/codex:arm64) 2>/dev/null
+
+rm -rf \
+  "${CODEX_POD_HOME:-$HOME/.codex-home}" \
+  "$HOME/.openai" \
+  "$HOME/.config/openai"
+```
+
+## License
+
+MIT. See LICENSE.
