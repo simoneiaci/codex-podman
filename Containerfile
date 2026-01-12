@@ -29,10 +29,15 @@ RUN curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg | d
     apt-get clean && \
     rm -rf /var/lib/apt/lists/*
 
-# Install Git Credential Manager
-RUN curl -L https://github.com/git-ecosystem/git-credential-manager/releases/download/v2.4.1/gcm-linux_amd64.2.4.1.deb -o /tmp/gcm.deb && \
-    dpkg -i /tmp/gcm.deb && \
-    rm /tmp/gcm.deb
+# Install Git Credential Manager (only available on amd64)
+RUN ARCH=$(dpkg --print-architecture) && \
+        if [ "$ARCH" = "amd64" ]; then \
+            curl -L "https://github.com/git-ecosystem/git-credential-manager/releases/download/v2.4.1/gcm-linux_${ARCH}.2.4.1.deb" -o /tmp/gcm.deb && \
+            dpkg -i /tmp/gcm.deb && \
+            rm /tmp/gcm.deb; \
+        else \
+            echo "Skipping Git Credential Manager install for architecture: $ARCH"; \
+        fi
 
 # Install Codex CLI
 RUN npm install -g @openai/codex

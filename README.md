@@ -6,7 +6,7 @@ Run the Codex CLI in a minimal Podman container on Apple Silicon (arm64). This r
 
 - Codex CLI
 - GitHub CLI (`gh`)
-- Git with Git Credential Manager
+- Git (Git Credential Manager only on amd64 builds)
 - Node.js & npm (pre-installed)
 - Python 3 & pip
 - Development tools: curl, wget, jq, vim, zip/unzip, build-essential
@@ -34,20 +34,15 @@ podman rm -f $(podman ps -aq --filter ancestor=localhost/codex:arm64) 2>/dev/nul
 
 # Remove Codex auth/config on host
 rm -rf \
-  "$HOME/.codex-home" \
+  "${CODEX_POD_HOME:-$HOME/.codex-home}" \
   "$HOME/.openai" \
   "$HOME/.config/openai"
 ```
+# Create container (if missing)
+alias codex-pod-init='podman ps -a --format {{.Names}} | grep -q "^codex$" || (mkdir -p "$HOME/.codex-home" && podman create --name codex --user "$(id -u):$(id -g)" --security-opt no-new-privileges --cap-drop=ALL --memory="4g" --cpus="2.0" --pids-limit 100 --pull=never -e HOME=/home/codex -v "$HOME/.codex-home:/home/codex" -v "$HOME/.gitconfig:/home/codex/.gitconfig:ro" -v "$HOME/.ssh:/home/codex/.ssh:ro" -v "${AI_WORKSPACE_DIR}:/workspace" -w /workspace localhost/codex:arm64)'
 
-## Build image
-
-The `Containerfile`:
-
-```Dockerfile
-FROM node:20-slim
-
-# Install system dependencies and tools
-RUN apt-get update && \
+# Start / attach to existing container
+alias codex-pod='podman start -ai codex'
     apt-get install -y \
     git curl wget gnupg ca-certificates \
     jq vim less unzip zip openssh-client \
@@ -63,8 +58,9 @@ RUN curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg | d
     apt-get clean && rm -rf /var/lib/apt/lists/*
 
 # Install Git Credential Manager
-RUN curl -L https://github.com/git-ecosystem/git-credential-manager/releases/download/v2.4.1/gcm-linux_amd64.2.4.1.deb -o /tmp/gcm.deb && \
-    dpkg -i /tmp/gcm.deb && rm /tmp/gcm.deb
+RUN ARCH=$(dpkg --print-architecture) && \
+  curl -L "https://github.com/git-ecosystem/git-credential-manager/releases/download/v2.4.1/gcm-linux_${ARCH}.2.4.1.deb" -o /tmp/gcm.deb && \
+  dpkg -i /tmp/gcm.deb && rm /tmp/gcm.deb
 
 RUN npm install -g @openai/codex
 
@@ -81,56 +77,50 @@ ENTRYPOINT ["/bin/bash"]
 
 Build:
 
+> **Apple Silicon (M1–M4) note:** These instructions target arm64 hosts like your MacBook Pro. Git Credential Manager is skipped on this architecture, so rely on SSH credentials mounted from the host for git operations.
+
 ```sh
 podman build --platform=linux/arm64 -t localhost/codex:arm64 .
 ```
 
 > **Note:** Podman will automatically pull the base image if not present locally.
-
 ## Configure workspace path
 
-Set your workspace directory (customize this to your needs):
+# Create container (if missing)
 
 ```bash
 export AI_WORKSPACE_DIR="$HOME/workspace"
 ```
 
-## Authenticate (one time)
+## Configure container home (per account)
 
-```sh
-mkdir -p "$HOME/.codex-home"
+Choose a dedicated directory for the container's Codex data so your personal credentials stay separate from any corporate login already configured on the host:
 
-podman run --rm -it \
-  --name codex \
-  --user "$(id -u):$(id -g)" \
-  -e HOME=/home/codex \
-  -v "$HOME/.codex-home:/home/codex" \
-  -v "$HOME/.gitconfig:/home/codex/.gitconfig:ro" \
-  -v "$HOME/.ssh:/home/codex/.ssh:ro" \
-  -v "${AI_WORKSPACE_DIR}:/workspace" \
-  -w /workspace \
-  localhost/codex:arm64 -c "codex login --device-auth"
+```bash
+export CODEX_POD_HOME="$HOME/.codex-home-personal"
+mkdir -p "$CODEX_POD_HOME"
 ```
 
-- Uses device auth
-- No localhost callback
-- Token saved to `~/.codex-home`
+> **Tip:** Point `CODEX_POD_HOME` somewhere other than the directory your corporate CLI session uses (commonly `~/.codex-home`) so the container mounts only your personal account data.
 
-> **Note:** Your host `~/.gitconfig` and `~/.ssh` are mounted read-only, so git commands will use your existing git identity and SSH keys for GitHub authentication.
-
-## Daily usage
+## Create container (one time)
 
 ```sh
-podman run --rm -it \
+mkdir -p "$CODEX_POD_HOME"
+
+podman create \
   --name codex \
   --user "$(id -u):$(id -g)" \
+  --interactive \
+  --tty \
   --security-opt no-new-privileges \
   --cap-drop=ALL \
   --memory="4g" \
   --cpus="2.0" \
   --pids-limit 100 \
+  --pull=never \
   -e HOME=/home/codex \
-  -v "$HOME/.codex-home:/home/codex" \
+  -v "${CODEX_POD_HOME}:/home/codex" \
   -v "$HOME/.gitconfig:/home/codex/.gitconfig:ro" \
   -v "$HOME/.ssh:/home/codex/.ssh:ro" \
   -v "${AI_WORKSPACE_DIR}:/workspace" \
@@ -138,32 +128,55 @@ podman run --rm -it \
   localhost/codex:arm64
 ```
 
-**Security features:**
-- `--security-opt no-new-privileges`: Prevents privilege escalation
-- `--cap-drop=ALL`: Drops all Linux capabilities
-- `--memory="4g"`: Limits memory usage to 4GB
-- `--cpus="2.0"`: Limits CPU usage to 2 cores
-- `--pids-limit 100`: Prevents fork bombs by limiting processes
+> **Note:** Your host `~/.gitconfig` and `~/.ssh` are mounted read-only, so git commands use your existing git identity and SSH keys. Run this creation step once; future sessions reuse the same container.
+
+> **Tip:** If you created the container before adding the interactive TTY flags or the `CODEX_POD_HOME` mount, remove it (`podman rm -f codex`) and recreate it so `podman start -ai codex` drops you into a personal-only shell.
+
+## Authenticate (first start)
+
+```sh
+podman start -ai codex
+```
+
+Inside the shell, run:
+
+```bash
+codex login --device-auth
+```
+
+- Uses device auth
+- No localhost callback
+- Token saved to `${CODEX_POD_HOME}` on the host via `/home/codex` inside the container
+
+Exit the shell to stop the container.
+
+## Daily usage
+
+```sh
+podman start -ai codex
+```
 
 ## Verify
 
 ```bash
 codex whoami
 ```
-
 ## Shell aliases
 
 For quick access, add these to your `.zshrc` or `.bashrc`:
 
-```bash
-# First-time authentication
-alias codex-pod-init='mkdir -p "$HOME/.codex-home" && podman run --rm -it --name codex --user "$(id -u):$(id -g)" -e HOME=/home/codex -v "$HOME/.codex-home:/home/codex" -v "$HOME/.gitconfig:/home/codex/.gitconfig:ro" -v "$HOME/.ssh:/home/codex/.ssh:ro" -v "${AI_WORKSPACE_DIR}:/workspace" -w /workspace localhost/codex:arm64 -c "codex login --device-auth"'
+> **Reminder:** Export `CODEX_POD_HOME` in your shell startup file before using the aliases so they mount the correct personal directory.
 
-# Daily usage
-alias codex-pod='podman run --rm -it --name codex --user "$(id -u):$(id -g)" --security-opt no-new-privileges --cap-drop=ALL --memory="4g" --cpus="2.0" --pids-limit 100 -e HOME=/home/codex -v "$HOME/.codex-home:/home/codex" -v "$HOME/.gitconfig:/home/codex/.gitconfig:ro" -v "$HOME/.ssh:/home/codex/.ssh:ro" -v "${AI_WORKSPACE_DIR}:/workspace" -w /workspace localhost/codex:arm64'
+```bash
+# Create container (if missing)
+alias codex-pod-init='podman ps -a --format {{.Names}} | grep -q "^codex$" || (mkdir -p "${CODEX_POD_HOME}" && podman create --name codex --user "$(id -u):$(id -g)" --interactive --tty --security-opt no-new-privileges --cap-drop=ALL --memory="4g" --cpus="2.0" --pids-limit 100 --pull=never -e HOME=/home/codex -v "${CODEX_POD_HOME}:/home/codex" -v "$HOME/.gitconfig:/home/codex/.gitconfig:ro" -v "$HOME/.ssh:/home/codex/.ssh:ro" -v "${AI_WORKSPACE_DIR}:/workspace" -w /workspace localhost/codex:arm64)'
+
+# Start / attach to existing container
+alias codex-pod='podman start -ai codex'
 ```
 
 Then use simply:
+
 ```bash
 codex-pod
 ```
